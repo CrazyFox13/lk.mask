@@ -118,15 +118,38 @@ jobs:
             docker-compose exec -T backend php artisan migrate --force || echo "Предупреждение: миграции не выполнены"
             echo ""
             
+            echo "Очистка старого кеша..."
+            docker-compose exec -T backend php artisan config:clear || true
+            docker-compose exec -T backend php artisan cache:clear || true
+            docker-compose exec -T backend php artisan route:clear || true
+            docker-compose exec -T backend php artisan view:clear || true
+            
             echo "Кеширование конфигурации..."
             docker-compose exec -T backend php artisan config:cache || echo "Предупреждение: config:cache не выполнен"
             docker-compose exec -T backend php artisan route:cache || echo "Предупреждение: route:cache не выполнен"
             docker-compose exec -T backend php artisan view:cache || echo "Предупреждение: view:cache не выполнен"
             echo ""
             
+            echo "Настройка прав доступа..."
+            docker-compose exec -T backend chmod -R 775 storage bootstrap/cache || true
+            docker-compose exec -T backend chown -R www-data:www-data storage bootstrap/cache || true
+            echo ""
+            
             echo "Проверка статуса контейнеров..."
             docker-compose ps
             echo ""
             
+            echo "Проверка подключения к БД..."
+            docker-compose exec -T backend php artisan tinker --execute="try { DB::connection()->getPdo(); echo '✓ БД подключена'; } catch (Exception \$e) { echo '✗ Ошибка БД: ' . \$e->getMessage(); }" 2>&1 || echo "⚠ Проблема с проверкой БД"
+            echo ""
+            
+            echo "Проверка логов (последние ошибки)..."
+            docker-compose logs --tail=20 backend 2>&1 | grep -i error || echo "Критических ошибок не найдено"
+            echo ""
+            
             echo "=== Деплой завершен успешно! ==="
             echo "Сайт доступен по адресу: https://lk.mack-group.ru"
+            echo ""
+            echo "Если сайт не работает, проверьте логи:"
+            echo "  docker-compose logs backend"
+            echo "  tail -f backend/storage/logs/laravel.log"
