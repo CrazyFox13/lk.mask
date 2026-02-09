@@ -164,15 +164,14 @@ jobs:
             
             # Остановка процессов на порту 9000 (PHP-FPM) после остановки контейнеров
             echo "Остановка процессов на порту 9000..."
-            # Простая и быстрая очистка без сложных циклов (с таймаутами)
-            (timeout 3 fuser -k 9000/tcp 2>/dev/null || true) &
-            (timeout 3 pkill -9 -f php-fpm 2>/dev/null || true) &
-            wait
+            # Максимально простая очистка - только базовые команды без циклов
+            fuser -k 9000/tcp 2>/dev/null || true
+            pkill -9 php-fpm 2>/dev/null || true
             sleep 1
             
-            # Очистка временных контейнеров backend (быстро и просто)
+            # Очистка временных контейнеров backend
             echo "Очистка временных контейнеров..."
-            timeout 10 bash -c 'docker ps -a --filter "name=backend_run" -q 2>/dev/null | head -20 | xargs -r docker rm -f 2>/dev/null' || true
+            docker ps -a --filter "name=backend_run" -q 2>/dev/null | head -10 | xargs docker rm -f 2>/dev/null || true
             sleep 1
             
             echo "✓ Очистка завершена"
