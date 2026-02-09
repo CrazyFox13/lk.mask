@@ -157,9 +157,43 @@ jobs:
             docker-compose exec -T backend chmod -R 775 storage bootstrap/cache 2>/dev/null || true
             docker-compose exec -T backend chown -R www-data:www-data storage bootstrap/cache 2>/dev/null || true
             
+            # УСТАНОВКА ЗАВИСИМОСТЕЙ ПЕРЕД ЗАПУСКОМ КОНТЕЙНЕРОВ
+            echo "=== УСТАНОВКА ЗАВИСИМОСТЕЙ COMPOSER ==="
+            cd backend || exit 1
+            
+            # Проверка наличия composer.json
+            if [ -f "composer.json" ]; then
+              echo "Установка зависимостей Composer..."
+              # Установка зависимостей на хосте (если composer установлен) или в временном контейнере
+              if command -v composer &> /dev/null; then
+                composer install --no-dev --optimize-autoloader --no-interaction || echo "⚠ Composer на хосте не установлен или ошибка"
+              else
+                echo "Composer не найден на хосте, будет установлен в контейнере"
+              fi
+            else
+              echo "⚠ composer.json не найден"
+            fi
+            
+            cd ..
+            echo ""
+            
+            # Запуск контейнеров
+            echo "Запуск Docker контейнеров..."
+            docker-compose up -d --build db redis || echo "⚠ Ошибка запуска db/redis"
+            sleep 5
+            
+            # Установка зависимостей в контейнере backend
+            echo "Установка зависимостей в контейнере backend..."
+            docker-compose run --rm backend composer install --no-dev --optimize-autoloader --no-interaction || echo "⚠ Ошибка установки зависимостей"
+            
+            # Запуск backend контейнера
+            echo "Запуск backend контейнера..."
+            docker-compose up -d --build backend || echo "⚠ Ошибка запуска backend"
+            sleep 10
+            
             # Перезапуск контейнеров
             echo "Перезапуск контейнеров..."
-            docker-compose restart || docker-compose up -d --build || true
+            docker-compose restart || docker-compose up -d || true
             sleep 10
             
             # Пересоздание кеша после перезапуска
@@ -168,6 +202,11 @@ jobs:
               docker-compose exec -T backend php artisan config:cache || true
               docker-compose exec -T backend php artisan route:cache || true
               docker-compose exec -T backend php artisan view:cache || true
+            else
+              echo "⚠ Контейнер backend не запущен, попытка запуска..."
+              docker-compose up -d backend
+              sleep 5
+              docker-compose exec -T backend php artisan config:cache || true
             fi
             echo ""
             
