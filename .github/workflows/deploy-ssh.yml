@@ -14,7 +14,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Deploy to server
+      - name: Test SSH connection
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -22,19 +22,68 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
           script: |
-            cd ${{ secrets.DEPLOY_PATH }}
-            echo "Current directory: $(pwd)"
-            echo "Pulling latest changes from GitHub..."
-            git pull origin main || git pull origin master
-            echo "Updating Docker containers..."
-            docker-compose pull || true
-            docker-compose up -d --build
-            echo "Installing Composer dependencies..."
-            docker-compose exec -T backend composer install --no-dev --optimize-autoloader || true
-            echo "Running migrations..."
-            docker-compose exec -T backend php artisan migrate --force || true
-            echo "Caching configuration..."
-            docker-compose exec -T backend php artisan config:cache || true
-            docker-compose exec -T backend php artisan route:cache || true
-            docker-compose exec -T backend php artisan view:cache || true
-            echo "Deployment completed successfully!"
+            echo "=== Тест SSH подключения ==="
+            echo "Пользователь: $(whoami)"
+            echo "Хост: $(hostname)"
+            echo "Текущая директория: $(pwd)"
+            echo "Проверка SSH ключа..."
+            ls -la ~/.ssh/ | head -5
+            echo "=== Подключение работает! ==="
+
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script_stop: true
+          script: |
+            echo "=== Начало деплоя ==="
+            echo "Пользователь: $(whoami)"
+            echo "Текущая директория: $(pwd)"
+            echo "Путь деплоя: ${{ secrets.DEPLOY_PATH }}"
+            echo ""
+            
+            # Проверка существования директории
+            if [ ! -d "${{ secrets.DEPLOY_PATH }}" ]; then
+              echo "ОШИБКА: Директория не существует: ${{ secrets.DEPLOY_PATH }}"
+              echo "Создание директории..."
+              mkdir -p "${{ secrets.DEPLOY_PATH }}"
+            fi
+            
+            cd "${{ secrets.DEPLOY_PATH }}" || exit 1
+            echo "Переход в директорию: $(pwd)"
+            echo ""
+            
+            # Проверка Git репозитория
+            if [ ! -d ".git" ]; then
+              echo "Git репозиторий не найден. Клонирование..."
+              git clone https://github.com/CrazyFox13/lk.mask.git .
+            fi
+            
+            echo "Получение изменений из GitHub..."
+            git fetch origin
+            git pull origin main || git pull origin master || echo "Предупреждение: git pull не выполнен"
+            echo ""
+            
+            echo "Обновление Docker контейнеров..."
+            docker-compose pull || echo "Предупреждение: docker-compose pull не выполнен"
+            docker-compose up -d --build || echo "ОШИБКА: docker-compose up не выполнен"
+            echo ""
+            
+            echo "Установка зависимостей Composer..."
+            docker-compose exec -T backend composer install --no-dev --optimize-autoloader || echo "Предупреждение: composer install не выполнен"
+            echo ""
+            
+            echo "Выполнение миграций..."
+            docker-compose exec -T backend php artisan migrate --force || echo "Предупреждение: миграции не выполнены"
+            echo ""
+            
+            echo "Кеширование конфигурации..."
+            docker-compose exec -T backend php artisan config:cache || echo "Предупреждение: config:cache не выполнен"
+            docker-compose exec -T backend php artisan route:cache || echo "Предупреждение: route:cache не выполнен"
+            docker-compose exec -T backend php artisan view:cache || echo "Предупреждение: view:cache не выполнен"
+            echo ""
+            
+            echo "=== Деплой завершен успешно! ==="
