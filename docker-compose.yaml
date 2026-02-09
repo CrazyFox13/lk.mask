@@ -6,11 +6,10 @@ services:
     working_dir: /var/www
     volumes:
       - ./backend:/var/www:rw
-    # БД на хосте (localhost), не зависит от контейнера db
+    # БД на хосте (localhost), используем network_mode: host для доступа к localhost
     # depends_on:
     #   - db
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    network_mode: "host"  # Доступ к localhost БД на хосте
     tty: true
   frontend:
     build:
