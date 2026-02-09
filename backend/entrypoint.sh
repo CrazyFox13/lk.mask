@@ -31,10 +31,42 @@ fi
 # Установка зависимостей если их нет
 if [ ! -f "/var/www/vendor/autoload.php" ]; then
     echo "Установка зависимостей Composer..."
-    # Сначала пробуем update для синхронизации lock файла, если не получается - install
-    composer update --no-dev --optimize-autoloader --no-interaction --with-all-dependencies 2>&1 || \
-    composer install --no-dev --optimize-autoloader --no-interaction --ignore-platform-reqs 2>&1 || \
-    echo "⚠ Ошибка установки зависимостей"
+    
+    # Проверяем синхронизацию composer.lock с composer.json
+    if [ -f "/var/www/composer.lock" ]; then
+        # Проверяем наличие dompdf в lock файле (если он есть в composer.json)
+        if grep -q '"dompdf/dompdf"' /var/www/composer.json 2>/dev/null && ! grep -q '"name": "dompdf/dompdf"' /var/www/composer.lock 2>/dev/null; then
+            echo "⚠ composer.lock не синхронизирован (dompdf отсутствует), удаляем и обновляем..."
+            rm -f /var/www/composer.lock
+            composer update --no-dev --optimize-autoloader --no-interaction --with-all-dependencies 2>&1 || {
+                echo "⚠ composer update не удался, пробуем install без lock файла..."
+                composer install --no-dev --optimize-autoloader --no-interaction --ignore-platform-reqs 2>&1 || {
+                    echo "⚠ КРИТИЧЕСКАЯ ОШИБКА: Не удалось установить зависимости!"
+                    exit 1
+                }
+            }
+        else
+            # Lock файл синхронизирован, пробуем install
+            composer install --no-dev --optimize-autoloader --no-interaction --ignore-platform-reqs 2>&1 || {
+                echo "⚠ composer install не удался, пробуем update..."
+                rm -f /var/www/composer.lock
+                composer update --no-dev --optimize-autoloader --no-interaction --with-all-dependencies 2>&1 || {
+                    echo "⚠ КРИТИЧЕСКАЯ ОШИБКА: Не удалось установить зависимости!"
+                    exit 1
+                }
+            }
+        fi
+    else
+        # Lock файла нет, создаем через update
+        echo "composer.lock не найден, создаем через composer update..."
+        composer update --no-dev --optimize-autoloader --no-interaction --with-all-dependencies 2>&1 || {
+            echo "⚠ composer update не удался, пробуем install..."
+            composer install --no-dev --optimize-autoloader --no-interaction --ignore-platform-reqs 2>&1 || {
+                echo "⚠ КРИТИЧЕСКАЯ ОШИБКА: Не удалось установить зависимости!"
+                exit 1
+            }
+        }
+    fi
     
     # Проверяем результат
     if [ ! -f "/var/www/vendor/autoload.php" ]; then
@@ -42,6 +74,8 @@ if [ ! -f "/var/www/vendor/autoload.php" ]; then
         echo "Проверьте composer.json и composer.lock на наличие ошибок"
         exit 1
     fi
+    
+    echo "✓ Зависимости успешно установлены"
 fi
 
 # Генерация APP_KEY если его нет
