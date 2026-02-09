@@ -43,7 +43,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
-                  timeout: 600s
+          timeout: 600s
           script_stop: false
           script: |
             echo "=== ДЕТАЛЬНАЯ ДИАГНОСТИКА И ИСПРАВЛЕНИЕ ОШИБКИ 500 ==="
