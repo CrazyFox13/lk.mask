@@ -1,0 +1,33 @@
+name: Deploy via SSH
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script: |
+            cd ${{ secrets.DEPLOY_PATH }}
+            git pull origin main
+            docker-compose pull
+            docker-compose up -d --build
+            docker-compose exec -T backend composer install --no-dev --optimize-autoloader || true
+            docker-compose exec -T backend php artisan migrate --force || true
+            docker-compose exec -T backend php artisan config:cache || true
+            docker-compose exec -T backend php artisan route:cache || true
+            docker-compose exec -T backend php artisan view:cache || true
