@@ -164,13 +164,22 @@ jobs:
             
             # Остановка процессов на порту 9000 (PHP-FPM) после остановки контейнеров
             echo "Остановка процессов на порту 9000..."
-            lsof -ti:9000 | xargs kill -9 2>/dev/null || fuser -k 9000/tcp 2>/dev/null || pkill -f php-fpm 2>/dev/null || echo "Порт 9000 свободен или процесс не найден"
-            sleep 3
+            # Останавливаем все временные контейнеры backend
+            docker ps -a --filter "name=backend" --format "{{.ID}}" | xargs -r docker rm -f 2>/dev/null || true
+            # Убиваем процессы на порту 9000
+            (lsof -ti:9000 2>/dev/null | xargs kill -9 2>/dev/null) || \
+            (fuser -k 9000/tcp 2>/dev/null) || \
+            (pkill -9 -f php-fpm 2>/dev/null) || \
+            echo "Порт 9000 свободен или процесс не найден"
+            sleep 5
             
             # Проверка что порт свободен
-            if lsof -ti:9000 >/dev/null 2>&1; then
+            if command -v lsof >/dev/null 2>&1 && lsof -ti:9000 >/dev/null 2>&1; then
               echo "⚠ ПРЕДУПРЕЖДЕНИЕ: Порт 9000 все еще занят!"
-              lsof -i:9000 || echo "Не удалось проверить порт"
+              lsof -i:9000 2>/dev/null || echo "Не удалось проверить порт"
+              # Принудительная очистка
+              fuser -k 9000/tcp 2>/dev/null || true
+              sleep 3
             else
               echo "✓ Порт 9000 свободен"
             fi
@@ -205,13 +214,30 @@ jobs:
             
             # Установка зависимостей в контейнере backend с обновлением lock файла
             echo "Установка зависимостей в контейнере backend..."
-            echo "Используем composer update для синхронизации lock файла..."
-            docker-compose run --rm backend sh -c "
-              composer update --no-dev --optimize-autoloader --no-interaction --with-all-dependencies || 
-              (echo '⚠ composer update не удался, пробуем composer install...' && 
-               composer install --no-dev --optimize-autoloader --no-interaction --ignore-platform-reqs || 
-               echo '⚠ Ошибка установки зависимостей')
-            " || echo "⚠ Ошибка установки зависимостей"
+            echo "Проверка синхронизации composer.lock с composer.json..."
+            
+            # Удаляем composer.lock если он не синхронизирован (dompdf отсутствует)
+            if docker-compose run --rm backend sh -c "grep -q 'dompdf/dompdf' composer.lock 2>/dev/null" 2>/dev/null; then
+              echo "✓ composer.lock содержит dompdf, пробуем composer install..."
+              docker-compose run --rm backend composer install --no-dev --optimize-autoloader --no-interaction --ignore-platform-reqs || {
+                echo "⚠ composer install не удался, удаляем lock файл и обновляем..."
+                docker-compose run --rm backend sh -c "rm -f composer.lock && composer update --no-dev --optimize-autoloader --no-interaction --with-all-dependencies"
+              }
+            else
+              echo "⚠ composer.lock не синхронизирован (dompdf отсутствует), удаляем и обновляем..."
+              docker-compose run --rm backend sh -c "rm -f composer.lock && composer update --no-dev --optimize-autoloader --no-interaction --with-all-dependencies" || {
+                echo "⚠ composer update не удался, пробуем composer install без lock файла..."
+                docker-compose run --rm backend composer install --no-dev --optimize-autoloader --no-interaction --ignore-platform-reqs || echo "⚠ Ошибка установки зависимостей"
+              }
+            fi
+            
+            # Проверка что зависимости установлены
+            if docker-compose run --rm backend sh -c "test -f vendor/autoload.php" 2>/dev/null; then
+              echo "✓ Зависимости успешно установлены"
+            else
+              echo "✗ КРИТИЧЕСКАЯ ОШИБКА: vendor/autoload.php не создан!"
+              exit 1
+            fi
             
             # Запуск backend контейнера
             echo "Запуск backend контейнера..."
