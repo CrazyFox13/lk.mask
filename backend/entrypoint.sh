@@ -1,27 +1,43 @@
 #!/bin/bash
 
-echo "DB ${DB_HOST}"
+echo "DB ${DB_HOST:-localhost}"
 
-# sleep while no database
-STATUS=3
-until [ "$STATUS" -eq "0" ]; do
-    echo "STATUS: $STATUS"
-    ping -c 1 db
-    STATUS=$(echo $?)
-    echo "Waiting for DB...$STATUS"
-    sleep 1
-done
-
-STATUS=3
-until [ "$STATUS" -eq "0" ]; do
-    echo "STATUS: $STATUS"
-    nc -zv db 3306
-    STATUS=$(echo $?)
-    echo "Check network...$STATUS"
-    sleep 1
-done
-
-echo "DB IS OK!"
+# Проверка подключения к БД на localhost (если БД на хосте)
+if [ "${DB_HOST:-localhost}" = "localhost" ] || [ "${DB_HOST:-localhost}" = "127.0.0.1" ]; then
+    echo "Проверка подключения к БД на localhost..."
+    STATUS=3
+    until [ "$STATUS" -eq "0" ]; do
+        echo "STATUS: $STATUS"
+        nc -zv localhost 3306 2>&1 || nc -zv 127.0.0.1 3306 2>&1
+        STATUS=$(echo $?)
+        echo "Check database connection...$STATUS"
+        if [ "$STATUS" -ne "0" ]; then
+            sleep 2
+        fi
+    done
+    echo "DB IS OK!"
+else
+    # Если БД в Docker контейнере
+    echo "Проверка подключения к БД в Docker..."
+    STATUS=3
+    until [ "$STATUS" -eq "0" ]; do
+        echo "STATUS: $STATUS"
+        ping -c 1 ${DB_HOST} > /dev/null 2>&1
+        STATUS=$(echo $?)
+        echo "Waiting for DB...$STATUS"
+        sleep 1
+    done
+    
+    STATUS=3
+    until [ "$STATUS" -eq "0" ]; do
+        echo "STATUS: $STATUS"
+        nc -zv ${DB_HOST} 3306
+        STATUS=$(echo $?)
+        echo "Check network...$STATUS"
+        sleep 1
+    done
+    echo "DB IS OK!"
+fi
 
 # Установка зависимостей если их нет
 if [ ! -f "/var/www/vendor/autoload.php" ]; then

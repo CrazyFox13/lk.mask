@@ -81,7 +81,15 @@ jobs:
             sed -i 's|^DB_DATABASE=.*|DB_DATABASE=lk_mack|g' .env 2>/dev/null || true
             sed -i 's|^DB_USERNAME=.*|DB_USERNAME=mack-bd|g' .env 2>/dev/null || true
             sed -i 's|^DB_PASSWORD=.*|DB_PASSWORD=uN3kU4aZ9k|g' .env 2>/dev/null || true
-            sed -i 's|^DB_HOST=.*|DB_HOST=db|g' .env 2>/dev/null || true
+            # Проверка: если БД на хосте (порт 3306 занят), используем localhost, иначе db
+            if netstat -tuln 2>/dev/null | grep -q ":3306 " || ss -tuln 2>/dev/null | grep -q ":3306 "; then
+              echo "⚠ Порт 3306 занят, используем localhost для БД"
+              sed -i 's|^DB_HOST=.*|DB_HOST=localhost|g' .env 2>/dev/null || true
+              sed -i 's|^DB_PORT=.*|DB_PORT=3306|g' .env 2>/dev/null || true
+            else
+              sed -i 's|^DB_HOST=.*|DB_HOST=db|g' .env 2>/dev/null || true
+              sed -i 's|^DB_PORT=.*|DB_PORT=3306|g' .env 2>/dev/null || true
+            fi
             sed -i 's|^APP_URL=.*|APP_URL=https://lk.mack-group.ru|g' .env 2>/dev/null || true
             sed -i 's|^APP_ENV=.*|APP_ENV=production|g' .env 2>/dev/null || true
             sed -i 's|^APP_DEBUG=.*|APP_DEBUG=false|g' .env 2>/dev/null || true
@@ -177,10 +185,11 @@ jobs:
             cd ..
             echo ""
             
-            # Запуск контейнеров
+            # Запуск контейнеров (БД на хосте, запускаем только redis и backend)
             echo "Запуск Docker контейнеров..."
-            docker-compose up -d --build db redis || echo "⚠ Ошибка запуска db/redis"
-            sleep 5
+            echo "БД запущена на хосте (localhost), пропускаем контейнер db"
+            docker-compose up -d --build redis || echo "⚠ Ошибка запуска redis"
+            sleep 3
             
             # Установка зависимостей в контейнере backend
             echo "Установка зависимостей в контейнере backend..."

@@ -6,8 +6,10 @@ services:
     working_dir: /var/www
     volumes:
       - ./backend:/var/www:rw
-    depends_on:
-      - db
+    # БД на хосте, не зависит от контейнера db
+    # depends_on:
+    #   - db
+    network_mode: "host"  # Используем сеть хоста для доступа к localhost БД
     tty: true
   frontend:
     build:
@@ -45,7 +47,7 @@ services:
     volumes:
       - db_data:/var/lib/mysql/
     ports:
-      - "3306:3306"
+      - "3307:3306"
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-uN3kU4aZ9k}
       MYSQL_DATABASE: ${DB_DATABASE:-lk_mack}
