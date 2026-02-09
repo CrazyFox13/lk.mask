@@ -43,7 +43,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
-          timeout: 600s
+          timeout: 1200s
           script_stop: false
           script: |
             echo "=== ДЕТАЛЬНАЯ ДИАГНОСТИКА И ИСПРАВЛЕНИЕ ОШИБКИ 500 ==="
@@ -208,33 +208,38 @@ jobs:
             echo "Установка зависимостей в контейнере backend..."
             echo "Проверка синхронизации composer.lock с composer.json..."
             
-            # Проверяем наличие dompdf в composer.json
-            HAS_DOMPDF=$(docker-compose run --rm backend sh -c "grep -q '\"dompdf/dompdf\"' composer.json 2>/dev/null && echo 'yes' || echo 'no'" 2>/dev/null | tail -1)
-            
-            if [ "$HAS_DOMPDF" = "yes" ]; then
-              # Проверяем наличие dompdf как прямого пакета в composer.lock
-              HAS_DOMPDF_IN_LOCK=$(docker-compose run --rm backend sh -c "grep -q '\"name\": \"dompdf/dompdf\"' composer.lock 2>/dev/null && echo 'yes' || echo 'no'" 2>/dev/null | tail -1)
-              
-              if [ "$HAS_DOMPDF_IN_LOCK" != "yes" ]; then
-                echo "⚠ composer.lock не синхронизирован (dompdf отсутствует), удаляем и обновляем..."
-                docker-compose run --rm backend sh -c "rm -f composer.lock && composer update --no-dev --optimize-autoloader --no-interaction --with-all-dependencies" || {
-                  echo "⚠ composer update не удался, пробуем composer install без lock файла..."
-                  docker-compose run --rm backend composer install --no-dev --optimize-autoloader --no-interaction --ignore-platform-reqs || echo "⚠ Ошибка установки зависимостей"
-                }
-              else
-                echo "✓ composer.lock содержит dompdf, пробуем composer install..."
-                docker-compose run --rm backend composer install --no-dev --optimize-autoloader --no-interaction --ignore-platform-reqs || {
-                  echo "⚠ composer install не удался, удаляем lock файл и обновляем..."
-                  docker-compose run --rm backend sh -c "rm -f composer.lock && composer update --no-dev --optimize-autoloader --no-interaction --with-all-dependencies"
-                }
-              fi
-            else
-              echo "dompdf не найден в composer.json, используем стандартную установку..."
-              docker-compose run --rm backend composer install --no-dev --optimize-autoloader --no-interaction --ignore-platform-reqs || {
-                echo "⚠ composer install не удался, пробуем update..."
-                docker-compose run --rm backend sh -c "rm -f composer.lock && composer update --no-dev --optimize-autoloader --no-interaction --with-all-dependencies"
-              }
-            fi
+# Проверяем наличие dompdf в composer.json
+echo "Проверка наличия dompdf в composer.json..."
+HAS_DOMPDF=$(timeout 30 docker-compose run --rm backend sh -c "grep -q '\"dompdf/dompdf\"' composer.json 2>/dev/null && echo 'yes' || echo 'no'" 2>/dev/null | tail -1 || echo "no")
+
+if [ "$HAS_DOMPDF" = "yes" ]; then
+  echo "dompdf найден в composer.json, проверяем composer.lock..."
+  # Проверяем наличие dompdf как прямого пакета в composer.lock
+  HAS_DOMPDF_IN_LOCK=$(timeout 30 docker-compose run --rm backend sh -c "grep -q '\"name\": \"dompdf/dompdf\"' composer.lock 2>/dev/null && echo 'yes' || echo 'no'" 2>/dev/null | tail -1 || echo "no")
+  
+  if [ "$HAS_DOMPDF_IN_LOCK" != "yes" ]; then
+    echo "⚠ composer.lock не синхронизирован (dompdf отсутствует), удаляем и обновляем..."
+    echo "Это может занять несколько минут..."
+    timeout 900 docker-compose run --rm backend sh -c "rm -f composer.lock && composer update --no-dev --optimize-autoloader --no-interaction --with-all-dependencies" || {
+      echo "⚠ composer update не удался, пробуем composer install без lock файла..."
+      timeout 900 docker-compose run --rm backend composer install --no-dev --optimize-autoloader --no-interaction --ignore-platform-reqs || echo "⚠ Ошибка установки зависимостей"
+    }
+  else
+    echo "✓ composer.lock содержит dompdf, пробуем composer install..."
+    echo "Это может занять несколько минут..."
+    timeout 900 docker-compose run --rm backend composer install --no-dev --optimize-autoloader --no-interaction --ignore-platform-reqs || {
+      echo "⚠ composer install не удался, удаляем lock файл и обновляем..."
+      timeout 900 docker-compose run --rm backend sh -c "rm -f composer.lock && composer update --no-dev --optimize-autoloader --no-interaction --with-all-dependencies"
+    }
+  fi
+else
+  echo "dompdf не найден в composer.json, используем стандартную установку..."
+  echo "Это может занять несколько минут..."
+  timeout 900 docker-compose run --rm backend composer install --no-dev --optimize-autoloader --no-interaction --ignore-platform-reqs || {
+    echo "⚠ composer install не удался, пробуем update..."
+    timeout 900 docker-compose run --rm backend sh -c "rm -f composer.lock && composer update --no-dev --optimize-autoloader --no-interaction --with-all-dependencies"
+  }
+fi
             
             # Проверка что зависимости установлены
             sleep 2
