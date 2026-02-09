@@ -14,6 +14,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
       - name: Test SSH connection
         uses: appleboy/ssh-action@v1.0.0
         with:
@@ -21,13 +28,12 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
+          timeout: 30s
           script: |
             echo "=== Тест SSH подключения ==="
             echo "Пользователь: $(whoami)"
             echo "Хост: $(hostname)"
             echo "Текущая директория: $(pwd)"
-            echo "Проверка SSH ключа..."
-            ls -la ~/.ssh/ | head -5
             echo "=== Подключение работает! ==="
 
       - name: Deploy to server
@@ -37,6 +43,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
+          timeout: 300s
           script_stop: true
           script: |
             echo "=== Начало деплоя ==="
