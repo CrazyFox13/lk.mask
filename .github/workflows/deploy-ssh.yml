@@ -23,11 +23,18 @@ jobs:
           port: ${{ secrets.SSH_PORT || 22 }}
           script: |
             cd ${{ secrets.DEPLOY_PATH }}
-            git pull origin main
-            docker-compose pull
+            echo "Current directory: $(pwd)"
+            echo "Pulling latest changes from GitHub..."
+            git pull origin main || git pull origin master
+            echo "Updating Docker containers..."
+            docker-compose pull || true
             docker-compose up -d --build
+            echo "Installing Composer dependencies..."
             docker-compose exec -T backend composer install --no-dev --optimize-autoloader || true
+            echo "Running migrations..."
             docker-compose exec -T backend php artisan migrate --force || true
+            echo "Caching configuration..."
             docker-compose exec -T backend php artisan config:cache || true
             docker-compose exec -T backend php artisan route:cache || true
             docker-compose exec -T backend php artisan view:cache || true
+            echo "Deployment completed successfully!"
