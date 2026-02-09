@@ -164,21 +164,27 @@ jobs:
             
             # Остановка процессов на порту 9000 (PHP-FPM) после остановки контейнеров
             echo "Остановка процессов на порту 9000..."
-            # Убиваем процессы на порту 9000 (несколько попыток)
-            for i in 1 2 3; do
-              lsof -ti:9000 2>/dev/null | xargs -r kill -9 2>/dev/null || true
-              fuser -k 9000/tcp 2>/dev/null || true
-              pkill -9 -f php-fpm 2>/dev/null || true
-              sleep 2
-            done
+            # Убиваем процессы на порту 9000 (безопасно, без xargs -r)
+            PIDS=$(lsof -ti:9000 2>/dev/null || true)
+            if [ -n "$PIDS" ]; then
+              echo "$PIDS" | while read pid; do
+                [ -n "$pid" ] && kill -9 "$pid" 2>/dev/null || true
+              done
+            fi
+            fuser -k 9000/tcp 2>/dev/null || true
+            pkill -9 -f php-fpm 2>/dev/null || true
+            sleep 3
             
             # Очистка временных контейнеров backend (безопасно)
             echo "Очистка временных контейнеров..."
-            docker ps -a --filter "name=backend_run" --format "{{.ID}}" 2>/dev/null | while read id; do
-              [ -n "$id" ] && docker rm -f "$id" 2>/dev/null || true
-            done || true
+            CONTAINER_IDS=$(docker ps -a --filter "name=backend_run" --format "{{.ID}}" 2>/dev/null || true)
+            if [ -n "$CONTAINER_IDS" ]; then
+              echo "$CONTAINER_IDS" | while read id; do
+                [ -n "$id" ] && docker rm -f "$id" 2>/dev/null || true
+              done
+            fi
             
-            sleep 3
+            sleep 2
             
             # Проверка что порт свободен
             if command -v lsof >/dev/null 2>&1 && lsof -ti:9000 >/dev/null 2>&1; then
