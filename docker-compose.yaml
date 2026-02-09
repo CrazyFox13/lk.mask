@@ -40,7 +40,8 @@ services:
       - backend
       - web
       - frontend
-    network_mode: "host"  # Используем host network для доступа к backend на localhost:9000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     # deploy:
     #   replicas: 1
   db:
