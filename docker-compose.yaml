@@ -40,6 +40,7 @@ services:
       - backend
       - web
       - frontend
+    network_mode: "host"  # Используем host network для доступа к backend на localhost:9000
     # deploy:
     #   replicas: 1
   db:
