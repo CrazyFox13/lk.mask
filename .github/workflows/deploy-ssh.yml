@@ -46,7 +46,7 @@ jobs:
           timeout: 300s
           script_stop: false
           script: |
-            echo "=== Диагностика и исправление ошибки 500 ==="
+            echo "=== ДЕТАЛЬНАЯ ДИАГНОСТИКА И ИСПРАВЛЕНИЕ ОШИБКИ 500 ==="
             echo "Пользователь: $(whoami)"
             echo "Путь деплоя: ${{ secrets.DEPLOY_PATH }}"
             echo ""
@@ -66,75 +66,126 @@ jobs:
             fi
             echo ""
             
-            # Запуск скрипта диагностики
-            echo "Запуск скрипта диагностики..."
-            if [ -f "fix-500-error.sh" ]; then
-              chmod +x fix-500-error.sh
-              bash fix-500-error.sh
+            # ДЕТАЛЬНАЯ ДИАГНОСТИКА
+            echo "=== 1. ПРОВЕРКА .env ФАЙЛА ==="
+            cd backend || exit 1
+            if [ -f ".env.production" ]; then
+              cp .env.production .env
+              echo "✓ .env создан из .env.production"
+            elif [ ! -f ".env" ] && [ -f ".env.example" ]; then
+              cp .env.example .env
+              echo "✓ .env создан из .env.example"
+            fi
+            
+            # Обновление настроек
+            sed -i 's|^DB_DATABASE=.*|DB_DATABASE=lk_mack|g' .env 2>/dev/null || true
+            sed -i 's|^DB_USERNAME=.*|DB_USERNAME=mack-bd|g' .env 2>/dev/null || true
+            sed -i 's|^DB_PASSWORD=.*|DB_PASSWORD=uN3kU4aZ9k|g' .env 2>/dev/null || true
+            sed -i 's|^DB_HOST=.*|DB_HOST=db|g' .env 2>/dev/null || true
+            sed -i 's|^APP_URL=.*|APP_URL=https://lk.mack-group.ru|g' .env 2>/dev/null || true
+            sed -i 's|^APP_ENV=.*|APP_ENV=production|g' .env 2>/dev/null || true
+            sed -i 's|^APP_DEBUG=.*|APP_DEBUG=false|g' .env 2>/dev/null || true
+            
+            echo "Текущие настройки .env:"
+            grep -E "^APP_KEY|^DB_|^APP_URL|^APP_ENV|^APP_DEBUG" .env | sed 's/PASSWORD=.*/PASSWORD=***/'
+            echo ""
+            
+            cd ..
+            
+            echo "=== 2. ПРОВЕРКА СТАТУСА КОНТЕЙНЕРОВ ==="
+            docker-compose ps
+            echo ""
+            
+            echo "=== 3. ПРОВЕРКА ЛОГОВ LARAVEL (последние 100 строк) ==="
+            if [ -f "backend/storage/logs/laravel.log" ]; then
+              tail -100 backend/storage/logs/laravel.log
             else
-              echo "Скрипт не найден, выполняю диагностику вручную..."
-              
-              # Настройка .env
-              cd backend || exit 1
-              if [ -f ".env.production" ]; then
-                cp .env.production .env
-              elif [ ! -f ".env" ] && [ -f ".env.example" ]; then
-                cp .env.example .env
-              fi
-              
-              # Обновление настроек
-              sed -i 's|^DB_DATABASE=.*|DB_DATABASE=lk_mack|g' .env 2>/dev/null || true
-              sed -i 's|^DB_USERNAME=.*|DB_USERNAME=mack-bd|g' .env 2>/dev/null || true
-              sed -i 's|^DB_PASSWORD=.*|DB_PASSWORD=uN3kU4aZ9k|g' .env 2>/dev/null || true
-              sed -i 's|^DB_HOST=.*|DB_HOST=db|g' .env 2>/dev/null || true
-              sed -i 's|^APP_URL=.*|APP_URL=https://lk.mack-group.ru|g' .env 2>/dev/null || true
-              sed -i 's|^APP_ENV=.*|APP_ENV=production|g' .env 2>/dev/null || true
-              sed -i 's|^APP_DEBUG=.*|APP_DEBUG=false|g' .env 2>/dev/null || true
-              
-              cd ..
-              
-              # Генерация APP_KEY
+              echo "⚠ Файл логов не найден"
+            fi
+            echo ""
+            
+            echo "=== 4. ПРОВЕРКА ЛОГОВ BACKEND КОНТЕЙНЕРА ==="
+            docker-compose logs --tail=50 backend 2>&1
+            echo ""
+            
+            echo "=== 5. ПРОВЕРКА ЛОГОВ NGINX ==="
+            docker-compose logs --tail=30 nginx 2>&1 || echo "⚠ Логи nginx не найдены"
+            echo ""
+            
+            echo "=== 6. ПРОВЕРКА ПОДКЛЮЧЕНИЯ К БД ==="
+            if docker-compose ps backend 2>/dev/null | grep -q "Up"; then
+              docker-compose exec -T backend php artisan tinker --execute="
+                try {
+                  \$pdo = DB::connection()->getPdo();
+                  echo '✓ Подключение к БД успешно\n';
+                  echo 'База данных: ' . DB::connection()->getDatabaseName() . '\n';
+                } catch (Exception \$e) {
+                  echo '✗ ОШИБКА подключения к БД:\n';
+                  echo \$e->getMessage() . '\n';
+                  echo 'Проверьте DB_HOST в .env файле (возможно нужно localhost вместо db)\n';
+                }
+              " 2>&1 || echo "⚠ Не удалось проверить БД"
+            else
+              echo "⚠ Контейнер backend не запущен"
+            fi
+            echo ""
+            
+            echo "=== 7. ИСПРАВЛЕНИЕ ПРОБЛЕМ ==="
+            
+            # Генерация APP_KEY если его нет
+            if ! grep -q "APP_KEY=base64:" backend/.env 2>/dev/null; then
+              echo "Генерация APP_KEY..."
               if docker-compose ps backend 2>/dev/null | grep -q "Up"; then
-                if ! grep -q "APP_KEY=base64:" backend/.env 2>/dev/null; then
-                  echo "Генерация APP_KEY..."
-                  docker-compose exec -T backend php artisan key:generate --force || true
-                fi
+                docker-compose exec -T backend php artisan key:generate --force || true
+              else
+                echo "⚠ Контейнер не запущен, APP_KEY будет сгенерирован после запуска"
               fi
-              
-              # Очистка кеша
-              echo "Очистка кеша..."
+            fi
+            
+            # Очистка кеша
+            echo "Очистка кеша..."
+            if docker-compose ps backend 2>/dev/null | grep -q "Up"; then
               docker-compose exec -T backend php artisan config:clear || true
               docker-compose exec -T backend php artisan cache:clear || true
               docker-compose exec -T backend php artisan route:clear || true
               docker-compose exec -T backend php artisan view:clear || true
-              
-              # Пересоздание кеша
-              echo "Пересоздание кеша..."
-              docker-compose exec -T backend php artisan config:cache || true
-              docker-compose exec -T backend php artisan route:cache || true
-              docker-compose exec -T backend php artisan view:cache || true
-              
-              # Права доступа
-              echo "Настройка прав доступа..."
-              docker-compose exec -T backend chmod -R 775 storage bootstrap/cache || true
-              docker-compose exec -T backend chown -R www-data:www-data storage bootstrap/cache || true
             fi
-            echo ""
+            
+            # Права доступа
+            echo "Настройка прав доступа..."
+            chmod -R 775 backend/storage backend/bootstrap/cache 2>/dev/null || true
+            docker-compose exec -T backend chmod -R 775 storage bootstrap/cache 2>/dev/null || true
+            docker-compose exec -T backend chown -R www-data:www-data storage bootstrap/cache 2>/dev/null || true
             
             # Перезапуск контейнеров
             echo "Перезапуск контейнеров..."
             docker-compose restart || docker-compose up -d --build || true
+            sleep 10
+            
+            # Пересоздание кеша после перезапуска
+            echo "Пересоздание кеша..."
+            if docker-compose ps backend 2>/dev/null | grep -q "Up"; then
+              docker-compose exec -T backend php artisan config:cache || true
+              docker-compose exec -T backend php artisan route:cache || true
+              docker-compose exec -T backend php artisan view:cache || true
+            fi
             echo ""
             
-            # Проверка статуса
+            echo "=== 8. ФИНАЛЬНАЯ ПРОВЕРКА ==="
             echo "Статус контейнеров:"
             docker-compose ps
             echo ""
             
-            # Проверка логов
-            echo "Последние логи backend:"
-            docker-compose logs --tail=30 backend 2>&1 | tail -20
+            echo "Последние ошибки из логов Laravel:"
+            if [ -f "backend/storage/logs/laravel.log" ]; then
+              tail -20 backend/storage/logs/laravel.log | grep -i "error\|exception" || echo "Критических ошибок не найдено"
+            fi
             echo ""
             
-            echo "=== Диагностика завершена ==="
+            echo "=== ДИАГНОСТИКА ЗАВЕРШЕНА ==="
             echo "Проверьте сайт: https://lk.mack-group.ru"
+            echo ""
+            echo "Если ошибка сохраняется, проверьте:"
+            echo "1. DB_HOST в .env (возможно нужно localhost вместо db)"
+            echo "2. Логи: tail -f backend/storage/logs/laravel.log"
+            echo "3. Логи Docker: docker-compose logs backend"
