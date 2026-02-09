@@ -1,0 +1,108 @@
+name: Debug 500 Error
+
+on:
+  workflow_dispatch:
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Debug server
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          timeout: 300s
+          script: |
+            echo "=== Детальная диагностика ошибки 500 ==="
+            echo ""
+            
+            DEPLOY_PATH="${{ secrets.DEPLOY_PATH }}"
+            cd "$DEPLOY_PATH" || exit 1
+            
+            echo "1. Проверка .env файла:"
+            if [ -f "backend/.env" ]; then
+              echo "✓ .env найден"
+              echo "APP_KEY: $(grep '^APP_KEY=' backend/.env | head -1)"
+              echo "DB_HOST: $(grep '^DB_HOST=' backend/.env | head -1)"
+              echo "DB_DATABASE: $(grep '^DB_DATABASE=' backend/.env | head -1)"
+              echo "DB_USERNAME: $(grep '^DB_USERNAME=' backend/.env | head -1)"
+              echo "APP_URL: $(grep '^APP_URL=' backend/.env | head -1)"
+              echo "APP_ENV: $(grep '^APP_ENV=' backend/.env | head -1)"
+              echo "APP_DEBUG: $(grep '^APP_DEBUG=' backend/.env | head -1)"
+            else
+              echo "✗ .env файл не найден!"
+            fi
+            echo ""
+            
+            echo "2. Проверка статуса контейнеров:"
+            docker-compose ps
+            echo ""
+            
+            echo "3. Последние 50 строк логов Laravel:"
+            if [ -f "backend/storage/logs/laravel.log" ]; then
+              tail -50 backend/storage/logs/laravel.log
+            else
+              echo "⚠ Файл логов не найден"
+            fi
+            echo ""
+            
+            echo "4. Последние 30 строк логов backend контейнера:"
+            docker-compose logs --tail=30 backend 2>&1
+            echo ""
+            
+            echo "5. Последние 30 строк логов nginx:"
+            docker-compose logs --tail=30 nginx 2>&1 || echo "⚠ Логи nginx не найдены"
+            echo ""
+            
+            echo "6. Проверка подключения к БД:"
+            docker-compose exec -T backend php artisan tinker --execute="
+              try {
+                \$pdo = DB::connection()->getPdo();
+                echo '✓ Подключение к БД успешно\n';
+                echo 'База данных: ' . DB::connection()->getDatabaseName() . '\n';
+              } catch (Exception \$e) {
+                echo '✗ Ошибка подключения к БД:\n';
+                echo \$e->getMessage() . '\n';
+                echo 'Код ошибки: ' . \$e->getCode() . '\n';
+              }
+            " 2>&1 || echo "⚠ Не удалось проверить БД"
+            echo ""
+            
+            echo "7. Проверка прав доступа:"
+            ls -la backend/storage/logs/ | head -5
+            ls -la backend/bootstrap/cache/ | head -5
+            echo ""
+            
+            echo "8. Проверка конфигурации nginx:"
+            if docker-compose ps nginx 2>/dev/null | grep -q "Up"; then
+              docker-compose exec -T nginx nginx -t 2>&1
+            fi
+            echo ""
+            
+            echo "9. Попытка очистки кеша и перезапуска:"
+            docker-compose exec -T backend php artisan config:clear || true
+            docker-compose exec -T backend php artisan cache:clear || true
+            docker-compose exec -T backend php artisan route:clear || true
+            docker-compose exec -T backend php artisan view:clear || true
+            
+            if ! grep -q "APP_KEY=base64:" backend/.env 2>/dev/null; then
+              echo "Генерация APP_KEY..."
+              docker-compose exec -T backend php artisan key:generate --force || true
+            fi
+            
+            docker-compose exec -T backend php artisan config:cache || true
+            docker-compose restart || docker-compose up -d || true
+            echo ""
+            
+            echo "10. Финальная проверка статуса:"
+            docker-compose ps
+            echo ""
+            
+            echo "=== Диагностика завершена ==="
