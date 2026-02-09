@@ -1,0 +1,6 @@
+*
+!public/
+!.gitignore
+!koord_russia.csv
+!region.csv
+!city.csv

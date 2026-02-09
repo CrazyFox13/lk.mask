@@ -1,0 +1,93 @@
+<template>
+  <div>
+    Найдено: {{ totalCount }}
+    <v-list>
+      <v-list-item link v-for="user in users" :key="user.id">
+        <v-list-item-content>
+          <v-list-item-title>{{ user.name }} {{ user.surname }}</v-list-item-title>
+          <v-list-item-subtitle>{{ user.phone }}</v-list-item-subtitle>
+        </v-list-item-content>
+        <v-list-item-action>
+          <v-btn icon @click="attach(user)">
+            <v-icon>mdi-chevron-right</v-icon>
+          </v-btn>
+        </v-list-item-action>
+      </v-list-item>
+    </v-list>
+    <v-pagination v-model="page" :length="pagesCount"/>
+  </div>
+</template>
+
+<script>
+import QueryHelper from "@/mixins/QueryHelper";
+
+export default {
+  name: "AvailableReceivers",
+  props: ['query', 'pushNotification', 'reFetch'],
+  mixins: [QueryHelper],
+  data() {
+    return {
+      users: [],
+      page: 1,
+      pagesCount: 1,
+      totalCount: 0,
+    }
+  },
+  created() {
+    this.getUsers();
+
+    this.unsubscribe = this.$store.subscribe((mutation, state) => {
+      if (mutation.type === 'detachUserFromNotification') {
+        if (state.detachedUser) {
+          this.users.unshift(state.detachedUser);
+          this.$store.commit('detachUserFromNotification', undefined);
+          this.totalCount++;
+        }
+      }
+    });
+  },
+  beforeDestroy() {
+    this.unsubscribe;
+  },
+  watch: {
+    'query': {
+      handler() {
+        this.page = 1;
+        this.getUsers();
+      },
+      deep: true,
+    },
+    page: {
+      handler() {
+        this.getUsers();
+      }
+    },
+    reFetch: {
+      handler(v) {
+        v ? this.getUsers() : undefined;
+      }
+    }
+  },
+  methods: {
+    getUsers() {
+      this.$http.get(`push-notifications/${this.pushNotification.id}/available-receivers?page=${this.page}&${this.setQueryString(this.query)}`).then(r => {
+        this.users = r.body.users;
+        this.totalCount = r.body.totalCount;
+        this.pagesCount = r.body.pagesCount;
+
+      })
+    },
+    attach(user) {
+      this.$http.post(`push-notifications/${this.pushNotification.id}/attach/${user.id}`).then(() => {
+        this.users.splice(this.users.indexOf(user), 1);
+        this.$store.commit('attachUserToNotification', user);
+        this.totalCount--;
+      })
+    }
+  }
+}
+</script>
+
+<style scoped>
+
+</style>

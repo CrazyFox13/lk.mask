@@ -1,0 +1,19 @@
+<template>
+  <svg :width="size" :height="size" viewBox="0 0 10 10" fill="none"
+       xmlns="http://www.w3.org/2000/svg">
+    <path
+        d="M6.405 3.48947L10 3.81053L7.27 6.3L8.09 10L5 8.03684L1.91 10L2.725 6.3L0 3.81053L3.595 3.48947L5 0L6.405 3.48947Z"
+        fill="#EB8A00"/>
+  </svg>
+</template>
+
+<script>
+export default {
+  name: "StarFull",
+  props:['size']
+}
+</script>
+
+<style scoped>
+
+</style>

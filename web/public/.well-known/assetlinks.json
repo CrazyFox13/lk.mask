@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "su.astt",
+      "sha256_cert_fingerprints": [
+        "6D:CB:E3:C9:7F:4B:18:D5:6E:3E:DC:4C:F7:FF:B7:81:87:99:1D:26:08:7E:44:F7:19:E4:5D:E1:C2:D1:E1:B7"
+      ]
+    }
+  }
+]

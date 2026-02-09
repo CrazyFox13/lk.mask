@@ -1,0 +1,20 @@
+<table>
+    <thead>
+    <tr>
+        <th>Параметр</th>
+        <th>Онлайн</th>
+        <th>Просмотры</th>
+        <th>Переходы</th>
+    </tr>
+    </thead>
+    <tbody>
+    @foreach($data as $key=>$row)
+        <tr>
+            <td>{{$row->value}}</td>
+            <td>{{$row->online_users??'-'}}</td>
+            <td>{{$row->views_count??'-'}}</td>
+            <td>{{$row->clicks_count??'-'}}</td>
+        </tr>
+    @endforeach
+    </tbody>
+</table>
