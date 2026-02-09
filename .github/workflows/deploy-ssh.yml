@@ -36,7 +36,7 @@ jobs:
             echo "Текущая директория: $(pwd)"
             echo "=== Подключение работает! ==="
 
-      - name: Deploy to server
+      - name: Fix 500 error and deploy
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -44,112 +44,97 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
           timeout: 300s
-          script_stop: true
+          script_stop: false
           script: |
-            echo "=== Начало деплоя ==="
+            echo "=== Диагностика и исправление ошибки 500 ==="
             echo "Пользователь: $(whoami)"
-            echo "Текущая директория: $(pwd)"
             echo "Путь деплоя: ${{ secrets.DEPLOY_PATH }}"
             echo ""
             
-            # Проверка существования директории
-            if [ ! -d "${{ secrets.DEPLOY_PATH }}" ]; then
-              echo "ОШИБКА: Директория не существует: ${{ secrets.DEPLOY_PATH }}"
-              echo "Создание директории..."
-              mkdir -p "${{ secrets.DEPLOY_PATH }}"
-            fi
-            
+            # Переход в директорию проекта
             cd "${{ secrets.DEPLOY_PATH }}" || exit 1
-            echo "Переход в директорию: $(pwd)"
+            echo "Текущая директория: $(pwd)"
             echo ""
             
-            # Проверка Git репозитория
-            if [ ! -d ".git" ]; then
-              echo "Git репозиторий не найден. Клонирование..."
+            # Получение обновлений
+            if [ -d ".git" ]; then
+              echo "Получение обновлений из GitHub..."
+              git pull origin main || git pull origin master || echo "⚠ git pull не выполнен"
+            else
+              echo "Клонирование репозитория..."
               git clone https://github.com/CrazyFox13/lk.mask.git .
             fi
-            
-            echo "Получение изменений из GitHub..."
-            git fetch origin
-            git pull origin main || git pull origin master || echo "Предупреждение: git pull не выполнен"
             echo ""
             
-            echo "Настройка .env файла для production..."
-            cd backend || exit 1
-            if [ -f ".env.production" ]; then
-              cp .env.production .env
-              echo "✓ .env файл создан из .env.production"
-            elif [ ! -f ".env" ]; then
-              cp .env.example .env
-              echo "✓ .env файл создан из .env.example"
+            # Запуск скрипта диагностики
+            echo "Запуск скрипта диагностики..."
+            if [ -f "fix-500-error.sh" ]; then
+              chmod +x fix-500-error.sh
+              bash fix-500-error.sh
+            else
+              echo "Скрипт не найден, выполняю диагностику вручную..."
+              
+              # Настройка .env
+              cd backend || exit 1
+              if [ -f ".env.production" ]; then
+                cp .env.production .env
+              elif [ ! -f ".env" ] && [ -f ".env.example" ]; then
+                cp .env.example .env
+              fi
+              
+              # Обновление настроек
+              sed -i 's|^DB_DATABASE=.*|DB_DATABASE=lk_mack|g' .env 2>/dev/null || true
+              sed -i 's|^DB_USERNAME=.*|DB_USERNAME=mack-bd|g' .env 2>/dev/null || true
+              sed -i 's|^DB_PASSWORD=.*|DB_PASSWORD=uN3kU4aZ9k|g' .env 2>/dev/null || true
+              sed -i 's|^DB_HOST=.*|DB_HOST=db|g' .env 2>/dev/null || true
+              sed -i 's|^APP_URL=.*|APP_URL=https://lk.mack-group.ru|g' .env 2>/dev/null || true
+              sed -i 's|^APP_ENV=.*|APP_ENV=production|g' .env 2>/dev/null || true
+              sed -i 's|^APP_DEBUG=.*|APP_DEBUG=false|g' .env 2>/dev/null || true
+              
+              cd ..
+              
+              # Генерация APP_KEY
+              if docker-compose ps backend 2>/dev/null | grep -q "Up"; then
+                if ! grep -q "APP_KEY=base64:" backend/.env 2>/dev/null; then
+                  echo "Генерация APP_KEY..."
+                  docker-compose exec -T backend php artisan key:generate --force || true
+                fi
+              fi
+              
+              # Очистка кеша
+              echo "Очистка кеша..."
+              docker-compose exec -T backend php artisan config:clear || true
+              docker-compose exec -T backend php artisan cache:clear || true
+              docker-compose exec -T backend php artisan route:clear || true
+              docker-compose exec -T backend php artisan view:clear || true
+              
+              # Пересоздание кеша
+              echo "Пересоздание кеша..."
+              docker-compose exec -T backend php artisan config:cache || true
+              docker-compose exec -T backend php artisan route:cache || true
+              docker-compose exec -T backend php artisan view:cache || true
+              
+              # Права доступа
+              echo "Настройка прав доступа..."
+              docker-compose exec -T backend chmod -R 775 storage bootstrap/cache || true
+              docker-compose exec -T backend chown -R www-data:www-data storage bootstrap/cache || true
             fi
-            
-            # Обновление настроек БД в .env
-            sed -i 's|^DB_DATABASE=.*|DB_DATABASE=lk_mack|g' .env
-            sed -i 's|^DB_USERNAME=.*|DB_USERNAME=mack-bd|g' .env
-            sed -i 's|^DB_PASSWORD=.*|DB_PASSWORD=uN3kU4aZ9k|g' .env
-            sed -i 's|^DB_HOST=.*|DB_HOST=db|g' .env
-            sed -i 's|^APP_URL=.*|APP_URL=https://lk.mack-group.ru|g' .env
-            sed -i 's|^APP_ENV=.*|APP_ENV=production|g' .env
-            sed -i 's|^APP_DEBUG=.*|APP_DEBUG=false|g' .env
-            
-            # Генерация APP_KEY если его нет
-            if ! grep -q "APP_KEY=base64:" .env; then
-              echo "Генерация APP_KEY..."
-              docker-compose exec -T backend php artisan key:generate --force || echo "Предупреждение: не удалось сгенерировать ключ"
-            fi
-            
-            cd ..
             echo ""
             
-            echo "Обновление Docker контейнеров..."
-            docker-compose pull || echo "Предупреждение: docker-compose pull не выполнен"
-            docker-compose up -d --build || echo "ОШИБКА: docker-compose up не выполнен"
+            # Перезапуск контейнеров
+            echo "Перезапуск контейнеров..."
+            docker-compose restart || docker-compose up -d --build || true
             echo ""
             
-            echo "Ожидание запуска контейнеров..."
-            sleep 10
-            
-            echo "Установка зависимостей Composer..."
-            docker-compose exec -T backend composer install --no-dev --optimize-autoloader || echo "Предупреждение: composer install не выполнен"
-            echo ""
-            
-            echo "Выполнение миграций..."
-            docker-compose exec -T backend php artisan migrate --force || echo "Предупреждение: миграции не выполнены"
-            echo ""
-            
-            echo "Очистка старого кеша..."
-            docker-compose exec -T backend php artisan config:clear || true
-            docker-compose exec -T backend php artisan cache:clear || true
-            docker-compose exec -T backend php artisan route:clear || true
-            docker-compose exec -T backend php artisan view:clear || true
-            
-            echo "Кеширование конфигурации..."
-            docker-compose exec -T backend php artisan config:cache || echo "Предупреждение: config:cache не выполнен"
-            docker-compose exec -T backend php artisan route:cache || echo "Предупреждение: route:cache не выполнен"
-            docker-compose exec -T backend php artisan view:cache || echo "Предупреждение: view:cache не выполнен"
-            echo ""
-            
-            echo "Настройка прав доступа..."
-            docker-compose exec -T backend chmod -R 775 storage bootstrap/cache || true
-            docker-compose exec -T backend chown -R www-data:www-data storage bootstrap/cache || true
-            echo ""
-            
-            echo "Проверка статуса контейнеров..."
+            # Проверка статуса
+            echo "Статус контейнеров:"
             docker-compose ps
             echo ""
             
-            echo "Проверка подключения к БД..."
-            docker-compose exec -T backend php artisan tinker --execute="try { DB::connection()->getPdo(); echo '✓ БД подключена'; } catch (Exception \$e) { echo '✗ Ошибка БД: ' . \$e->getMessage(); }" 2>&1 || echo "⚠ Проблема с проверкой БД"
+            # Проверка логов
+            echo "Последние логи backend:"
+            docker-compose logs --tail=30 backend 2>&1 | tail -20
             echo ""
             
-            echo "Проверка логов (последние ошибки)..."
-            docker-compose logs --tail=20 backend 2>&1 | grep -i error || echo "Критических ошибок не найдено"
-            echo ""
-            
-            echo "=== Деплой завершен успешно! ==="
-            echo "Сайт доступен по адресу: https://lk.mack-group.ru"
-            echo ""
-            echo "Если сайт не работает, проверьте логи:"
-            echo "  docker-compose logs backend"
-            echo "  tail -f backend/storage/logs/laravel.log"
+            echo "=== Диагностика завершена ==="
+            echo "Проверьте сайт: https://lk.mack-group.ru"
