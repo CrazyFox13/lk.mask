@@ -74,10 +74,41 @@ jobs:
             git pull origin main || git pull origin master || echo "Предупреждение: git pull не выполнен"
             echo ""
             
+            echo "Настройка .env файла для production..."
+            cd backend || exit 1
+            if [ -f ".env.production" ]; then
+              cp .env.production .env
+              echo "✓ .env файл создан из .env.production"
+            elif [ ! -f ".env" ]; then
+              cp .env.example .env
+              echo "✓ .env файл создан из .env.example"
+            fi
+            
+            # Обновление настроек БД в .env
+            sed -i 's|^DB_DATABASE=.*|DB_DATABASE=lk_mack|g' .env
+            sed -i 's|^DB_USERNAME=.*|DB_USERNAME=mack-bd|g' .env
+            sed -i 's|^DB_PASSWORD=.*|DB_PASSWORD=uN3kU4aZ9k|g' .env
+            sed -i 's|^DB_HOST=.*|DB_HOST=db|g' .env
+            sed -i 's|^APP_URL=.*|APP_URL=https://lk.mack-group.ru|g' .env
+            sed -i 's|^APP_ENV=.*|APP_ENV=production|g' .env
+            sed -i 's|^APP_DEBUG=.*|APP_DEBUG=false|g' .env
+            
+            # Генерация APP_KEY если его нет
+            if ! grep -q "APP_KEY=base64:" .env; then
+              echo "Генерация APP_KEY..."
+              docker-compose exec -T backend php artisan key:generate --force || echo "Предупреждение: не удалось сгенерировать ключ"
+            fi
+            
+            cd ..
+            echo ""
+            
             echo "Обновление Docker контейнеров..."
             docker-compose pull || echo "Предупреждение: docker-compose pull не выполнен"
             docker-compose up -d --build || echo "ОШИБКА: docker-compose up не выполнен"
             echo ""
+            
+            echo "Ожидание запуска контейнеров..."
+            sleep 10
             
             echo "Установка зависимостей Composer..."
             docker-compose exec -T backend composer install --no-dev --optimize-autoloader || echo "Предупреждение: composer install не выполнен"
@@ -93,4 +124,9 @@ jobs:
             docker-compose exec -T backend php artisan view:cache || echo "Предупреждение: view:cache не выполнен"
             echo ""
             
+            echo "Проверка статуса контейнеров..."
+            docker-compose ps
+            echo ""
+            
             echo "=== Деплой завершен успешно! ==="
+            echo "Сайт доступен по адресу: https://lk.mack-group.ru"

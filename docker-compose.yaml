@@ -47,8 +47,10 @@ services:
     ports:
       - "3306:3306"
     environment:
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
-      MYSQL_DATABASE: ${DB_DATABASE}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-uN3kU4aZ9k}
+      MYSQL_DATABASE: ${DB_DATABASE:-lk_mack}
+      MYSQL_USER: ${DB_USERNAME:-mack-bd}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-uN3kU4aZ9k}
   redis:
     image: "redis:alpine"
     #ports:
