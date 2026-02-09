@@ -6,10 +6,11 @@ services:
     working_dir: /var/www
     volumes:
       - ./backend:/var/www:rw
-    # БД на хосте, не зависит от контейнера db
+    # БД на хосте (localhost), не зависит от контейнера db
     # depends_on:
     #   - db
-    network_mode: "host"  # Используем сеть хоста для доступа к localhost БД
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     tty: true
   frontend:
     build:
@@ -40,8 +41,8 @@ services:
       - backend
       - web
       - frontend
-    deploy:
-      replicas: 1
+    # deploy:
+    #   replicas: 1
   db:
     image: mysql:8
     volumes:
