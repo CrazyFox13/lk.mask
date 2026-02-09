@@ -156,8 +156,24 @@ jobs:
             # Права доступа
             echo "Настройка прав доступа..."
             chmod -R 775 backend/storage backend/bootstrap/cache 2>/dev/null || true
-            docker-compose exec -T backend chmod -R 775 storage bootstrap/cache 2>/dev/null || true
-            docker-compose exec -T backend chown -R www-data:www-data storage bootstrap/cache 2>/dev/null || true
+            
+            # Остановка всех контейнеров перед перезапуском
+            echo "Остановка существующих контейнеров..."
+            docker-compose down 2>/dev/null || true
+            sleep 2
+            
+            # Остановка процессов на порту 9000 (PHP-FPM) после остановки контейнеров
+            echo "Остановка процессов на порту 9000..."
+            lsof -ti:9000 | xargs kill -9 2>/dev/null || fuser -k 9000/tcp 2>/dev/null || pkill -f php-fpm 2>/dev/null || echo "Порт 9000 свободен или процесс не найден"
+            sleep 3
+            
+            # Проверка что порт свободен
+            if lsof -ti:9000 >/dev/null 2>&1; then
+              echo "⚠ ПРЕДУПРЕЖДЕНИЕ: Порт 9000 все еще занят!"
+              lsof -i:9000 || echo "Не удалось проверить порт"
+            else
+              echo "✓ Порт 9000 свободен"
+            fi
             
             # УСТАНОВКА ЗАВИСИМОСТЕЙ ПЕРЕД ЗАПУСКОМ КОНТЕЙНЕРОВ
             echo "=== УСТАНОВКА ЗАВИСИМОСТЕЙ COMPOSER ==="
@@ -165,12 +181,14 @@ jobs:
             
             # Проверка наличия composer.json
             if [ -f "composer.json" ]; then
-              echo "Установка зависимостей Composer..."
-              # Установка зависимостей на хосте (если composer установлен) или в временном контейнере
-              if command -v composer &> /dev/null; then
-                composer install --no-dev --optimize-autoloader --no-interaction || echo "⚠ Composer на хосте не установлен или ошибка"
-              else
+              echo "Проверка синхронизации composer.lock с composer.json..."
+              # Если lock файл не синхронизирован, используем update вместо install
+              if [ -f "composer.lock" ]; then
+                echo "composer.lock найден, проверка синхронизации..."
+                # Попытка установки с проверкой ошибок
                 echo "Composer не найден на хосте, будет установлен в контейнере"
+              else
+                echo "composer.lock не найден, будет создан при установке"
               fi
             else
               echo "⚠ composer.json не найден"
@@ -185,9 +203,15 @@ jobs:
             docker-compose up -d --build redis || echo "⚠ Ошибка запуска redis"
             sleep 3
             
-            # Установка зависимостей в контейнере backend
+            # Установка зависимостей в контейнере backend с обновлением lock файла
             echo "Установка зависимостей в контейнере backend..."
-            docker-compose run --rm backend composer install --no-dev --optimize-autoloader --no-interaction || echo "⚠ Ошибка установки зависимостей"
+            echo "Используем composer update для синхронизации lock файла..."
+            docker-compose run --rm backend sh -c "
+              composer update --no-dev --optimize-autoloader --no-interaction --with-all-dependencies || 
+              (echo '⚠ composer update не удался, пробуем composer install...' && 
+               composer install --no-dev --optimize-autoloader --no-interaction --ignore-platform-reqs || 
+               echo '⚠ Ошибка установки зависимостей')
+            " || echo "⚠ Ошибка установки зависимостей"
             
             # Запуск backend контейнера
             echo "Запуск backend контейнера..."

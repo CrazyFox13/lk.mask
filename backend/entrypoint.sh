@@ -31,7 +31,17 @@ fi
 # Установка зависимостей если их нет
 if [ ! -f "/var/www/vendor/autoload.php" ]; then
     echo "Установка зависимостей Composer..."
-    composer install --no-dev --optimize-autoloader --no-interaction || echo "⚠ Ошибка установки зависимостей"
+    # Сначала пробуем update для синхронизации lock файла, если не получается - install
+    composer update --no-dev --optimize-autoloader --no-interaction --with-all-dependencies 2>&1 || \
+    composer install --no-dev --optimize-autoloader --no-interaction --ignore-platform-reqs 2>&1 || \
+    echo "⚠ Ошибка установки зависимостей"
+    
+    # Проверяем результат
+    if [ ! -f "/var/www/vendor/autoload.php" ]; then
+        echo "⚠ КРИТИЧЕСКАЯ ОШИБКА: vendor/autoload.php не создан!"
+        echo "Проверьте composer.json и composer.lock на наличие ошибок"
+        exit 1
+    fi
 fi
 
 # Генерация APP_KEY если его нет
