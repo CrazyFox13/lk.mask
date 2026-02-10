@@ -15,7 +15,9 @@ class ApiError extends Error {
 export const apiFetch = async (url: string, opts?: any | undefined | null, server: boolean = true): Promise<any> => {
     const config = useRuntimeConfig();
     const {getToken} = useAuthStore();
-    const finalUrl = `${config.public.baseURL}/api/${url}`;
+    // В браузере — относительный путь (тот же хост, что и сайт). Сервер не трогаем.
+    const base = typeof window !== 'undefined' ? '' : (config.public.baseURL || 'http://localhost:5000').replace(/\/$/, '');
+    const finalUrl = base ? `${base}/api/${url}` : `/api/${url}`;
     const userSession = useCookie('user-session')
     const options = {
         ...(opts ? opts : {}),

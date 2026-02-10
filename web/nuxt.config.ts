@@ -145,7 +145,7 @@ export default defineNuxtConfig({
 
     runtimeConfig: {
         public: {
-            baseURL: process.env.BASE_URL || 'http://localhost:5000/',
+            baseURL: (process.env.BASE_URL || 'http://localhost:5000').replace(/\/$/, ''),
             pusherAppKey: process.env.PUSHER_APP_KEY,
             pusherCluster: process.env.PUSHER_APP_CLUSTER,
             pusherHost: process.env.PUSHER_APP_HOST,

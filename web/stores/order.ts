@@ -122,11 +122,8 @@ export const useOrderStore = defineStore("order", () => {
     const downloadPrintForm = async (offer: IOrderOffer) => {
         try {
             const config = useRuntimeConfig();
-            let baseURL = config.public.baseURL || 'http://localhost:5000/';
-            if (!baseURL.endsWith('/')) {
-                baseURL += '/';
-            }
-            const url = `${baseURL}api/orders/${offer.order_id}/order-offers/${offer.id}/application`;
+            const base = typeof window !== 'undefined' ? '' : (config.public.baseURL || 'http://localhost:5000').replace(/\/$/, '');
+            const url = base ? `${base}/api/orders/${offer.order_id}/order-offers/${offer.id}/application` : `/api/orders/${offer.order_id}/order-offers/${offer.id}/application`;
 
             const authStore = useAuthStore();
             const userSession = useCookie('user-session');
@@ -204,12 +201,8 @@ export const useOrderStore = defineStore("order", () => {
     const downloadInvoice = async (offer: IOrderOffer) => {
         try {
             const config = useRuntimeConfig();
-            let baseURL = config.public.baseURL || 'http://localhost:5000/';
-            // Убеждаемся, что baseURL заканчивается на слэш
-            if (!baseURL.endsWith('/')) {
-                baseURL += '/';
-            }
-            const url = `${baseURL}api/orders/${offer.order_id}/order-offers/${offer.id}/invoice`;
+            const base = typeof window !== 'undefined' ? '' : (config.public.baseURL || 'http://localhost:5000').replace(/\/$/, '');
+            const url = base ? `${base}/api/orders/${offer.order_id}/order-offers/${offer.id}/invoice` : `/api/orders/${offer.order_id}/order-offers/${offer.id}/invoice`;
             
             const authStore = useAuthStore();
             const userSession = useCookie('user-session');
