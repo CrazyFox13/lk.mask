@@ -256,9 +256,16 @@ jobs:
             docker-compose up -d --build backend || echo "⚠ Ошибка запуска backend"
             sleep 10
             
+            # Пересборка и запуск web (Nuxt) и frontend — новая версия фронта
+            echo "Пересборка и запуск web (Nuxt)..."
+            docker-compose up -d --build web || echo "⚠ Ошибка запуска web"
+            echo "Пересборка и запуск frontend..."
+            docker-compose up -d --build frontend || echo "⚠ Ошибка запуска frontend"
+            sleep 5
+            
             # Перезапуск контейнеров
             echo "Перезапуск контейнеров..."
-            docker-compose restart || docker-compose up -d || true
+            docker-compose up -d --build nginx || docker-compose restart || docker-compose up -d || true
             sleep 10
             
             # Пересоздание кеша после перезапуска
