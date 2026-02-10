@@ -10,6 +10,7 @@ yarn-error.log*
 .env.backup
 .env.local
 .env.*.local
+deploy_key
 
 # Build outputs
 dist/

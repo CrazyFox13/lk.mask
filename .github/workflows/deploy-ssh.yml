@@ -17,8 +17,11 @@ jobs:
       - name: Setup SSH key
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
+          # Ключ в рабочую директорию — так контейнер ssh-action его увидит
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > "$GITHUB_WORKSPACE/deploy_key"
+          chmod 600 "$GITHUB_WORKSPACE/deploy_key"
+          # Поддержка многострочного ключа (восстановление переносов)
+          sed -i 's/\\n/\n/g' "$GITHUB_WORKSPACE/deploy_key" 2>/dev/null || true
           ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
 
       - name: Test SSH connection
@@ -26,7 +29,7 @@ jobs:
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          key_path: /github/workspace/deploy_key
           port: ${{ secrets.SSH_PORT || 22 }}
           timeout: 30s
           script: |
@@ -41,7 +44,7 @@ jobs:
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          key_path: /github/workspace/deploy_key
           port: ${{ secrets.SSH_PORT || 22 }}
           timeout: 1200s
           script_stop: false
