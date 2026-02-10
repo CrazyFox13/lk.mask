@@ -17,11 +17,15 @@ jobs:
       - name: Setup SSH key
         run: |
           mkdir -p ~/.ssh
-          # Ключ в рабочую директорию — так контейнер ssh-action его увидит
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > "$GITHUB_WORKSPACE/deploy_key"
+          # Записываем ключ в файл (сохраняем переносы строк)
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > "$GITHUB_WORKSPACE/deploy_key"
+          # Если ключ в секрете хранился в одну строку с \n — разбиваем
+          if grep -q '\\\\n' "$GITHUB_WORKSPACE/deploy_key" 2>/dev/null; then
+            sed -i 's/\\n/\n/g' "$GITHUB_WORKSPACE/deploy_key"
+          fi
           chmod 600 "$GITHUB_WORKSPACE/deploy_key"
-          # Поддержка многострочного ключа (восстановление переносов)
-          sed -i 's/\\n/\n/g' "$GITHUB_WORKSPACE/deploy_key" 2>/dev/null || true
+          # Проверка без вывода ключа
+          head -1 "$GITHUB_WORKSPACE/deploy_key" | grep -q "BEGIN.*PRIVATE KEY" && echo "Key file OK" || echo "Key file format check failed"
           ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
 
       - name: Test SSH connection
@@ -29,7 +33,7 @@ jobs:
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
-          key_path: /github/workspace/deploy_key
+          key_path: ${{ github.workspace }}/deploy_key
           port: ${{ secrets.SSH_PORT || 22 }}
           timeout: 30s
           script: |
@@ -44,7 +48,7 @@ jobs:
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
-          key_path: /github/workspace/deploy_key
+          key_path: ${{ github.workspace }}/deploy_key
           port: ${{ secrets.SSH_PORT || 22 }}
           timeout: 1200s
           script_stop: false
